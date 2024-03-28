@@ -8,6 +8,8 @@ import (
 	"math/big"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -44,21 +46,22 @@ var (
 	sse *SSEServer
 )
 
+var swapProcessedCount atomic.Uint64
+var (
+	beginAt = time.Now()
+)
+
 // stonfi dex address, transaction on this address will be watched
 var stonfiAddr *address.Address = address.MustParseAddr("EQB3ncyBUTjZUA5EnFKR5_EnOMI9V1tTEAAPaiU71gc4TiUt")
 
 // use this to cache any jetton master
 var jWalletMasterCache = NewJettonWalletJettonMasterAddrCache()
+
+// cache all jetton master metadata
 var masterOffChainDataCache = NewJettonMasterOffChainDataCache()
 
 // use this to cache any pool info
 var priceCollector *PriceCollector = nil
-
-func panicErr(err error) {
-	if err != nil {
-		log.Fatal().Err(err).Msg("error")
-	}
-}
 
 func main() {
 	flag.Parse()
@@ -88,19 +91,26 @@ func main() {
 
 	// connect to mainnet lite servers
 	err = client.AddConnectionsFromConfig(context.Background(), cfg)
-	panicErr(err)
+	if err != nil {
+		panic(err)
+	}
 
 	api := ton.NewAPIClient(client, ton.ProofCheckPolicyFast).WithRetry()
 	api.SetTrustedBlockFromConfig(cfg)
 
 	b, err := api.CurrentMasterchainInfo(context.Background())
-	panicErr(err)
+	if err != nil {
+		panic(err)
+	}
 	log.Debug().Msgf("current masterchain block: %d", b.SeqNo)
 
 	acc, err := api.GetAccount(context.Background(), b, stonfiAddr)
-	panicErr(err)
+	if err != nil {
+		panic(err)
+	}
 	log.Debug().Msgf("account state: %t", acc.IsActive)
 
+	// swap action outputs
 	swapActionsCh := make(chan *SwapAction)
 	go func() {
 		for swapAction := range swapActionsCh {
@@ -123,6 +133,14 @@ func main() {
 
 				sse.Notifier <- []byte(swapAction.CSV())
 			}
+		}
+	}()
+
+	go func() {
+		for {
+			time.Sleep(10 * time.Second)
+			log.Debug().Msgf("processed %d transactions, took %s, rate %.3f", swapProcessedCount.Load(), time.Since(beginAt),
+				float32(swapProcessedCount.Load())/float32(time.Since(beginAt).Seconds()))
 		}
 	}()
 
@@ -179,6 +197,11 @@ func main() {
 				return
 			}
 
+			log.Debug().Msg(strings.Repeat("-", 80))
+			log.Debug().Msgf("swap action: %+v", swapAction)
+			log.Debug().Msg(strings.Repeat("-", 80))
+
+			swapProcessedCount.Add(1)
 			swapActionsCh <- swapAction
 		}(tx, inslice.Copy(), outslice.Copy(),
 			outMsgs[0].AsInternal().DstAddr)
@@ -337,7 +360,7 @@ func buildSwapAction(api ton.APIClientWrapped,
 	// update price collector
 	priceCollector.SetItem(poolAddr.String(), swapAction.pool)
 
-	return nil, nil
+	return swapAction, nil
 }
 
 func populateLPPoolInfo(api ton.APIClientWrapped, poolAddr *address.Address, pool *PoolInfo) error {

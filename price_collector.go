@@ -82,6 +82,9 @@ func (pic *PriceCollector) SymbolPrice(symbol string) (tlb.Coins, error) {
 }
 
 func (pic *PriceCollector) GetItem(key string) *PoolInfo {
+	pic.mutex.Lock()
+	defer pic.mutex.Unlock()
+
 	return pic.poolInfoMap[key]
 }
 

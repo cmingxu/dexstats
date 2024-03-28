@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -111,38 +112,52 @@ func (ji *JettonMasterInfo) String() string {
 // jetton addr are those store in a pool
 // jetton master addr are corresponding jetton master, save get_jetton_data request
 type JettonWalletJettonMasterAddrCache struct {
-	m map[*address.Address]*address.Address
+	mutex sync.Mutex
+	m     map[*address.Address]*address.Address
 }
 
 func NewJettonWalletJettonMasterAddrCache() *JettonWalletJettonMasterAddrCache {
 	return &JettonWalletJettonMasterAddrCache{
-		m: make(map[*address.Address]*address.Address),
+		mutex: sync.Mutex{},
+		m:     make(map[*address.Address]*address.Address),
 	}
 }
 
 func (c *JettonWalletJettonMasterAddrCache) Get(addr *address.Address) *address.Address {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
 	return c.m[addr]
 }
 
 func (c *JettonWalletJettonMasterAddrCache) Set(addr *address.Address, masterAddr *address.Address) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
 	c.m[addr] = masterAddr
 }
 
 // use to cache jetton master addr to jetton master offchain data cache
 type JettonMasterOffChainDataCache struct {
-	m map[string][]byte
+	lock sync.Mutex
+	m    map[string][]byte
 }
 
 func NewJettonMasterOffChainDataCache() *JettonMasterOffChainDataCache {
 	return &JettonMasterOffChainDataCache{
-		m: make(map[string][]byte),
+		lock: sync.Mutex{},
+		m:    make(map[string][]byte),
 	}
 }
 
 func (c *JettonMasterOffChainDataCache) Get(addr string) []byte {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 	return c.m[addr]
 }
 
 func (c *JettonMasterOffChainDataCache) Set(addr string, data []byte) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
 	c.m[addr] = data
 }

@@ -56,18 +56,17 @@ func (sa *SwapAction) String() string {
 
 func (sa *SwapAction) Pretty() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%s %s %s %s for %s %s at TX %s [%s] ",
-		"",
-		//	s(sa.srcWallet),
+	sb.WriteString(fmt.Sprintf("%s %s %s %s for %s %s at TX %s",
+		s(sa.srcWallet),
 		sa.Action(),
 		h(sa.token0Coins),
 		sa.Token0Symbol(),
 		h(sa.token1Coins),
 		sa.Token1Symbol(),
-		base64.StdEncoding.EncodeToString(sa.hash), sa.Missing()))
+		base64.StdEncoding.EncodeToString(sa.hash)))
 
 	if sa.pool != nil {
-		sb.WriteString(fmt.Sprintf("with pool %s (reserve: %s[$ %s]/%s[$ %s]) ",
+		sb.WriteString(fmt.Sprintf("POOL %s (reserve: %s[$ %s]/%s[$ %s]) ",
 			sa.pool.symbol, h(sa.pool.reserve0),
 			priceCollector.SymbolPriceFriendly(sa.pool.token0JettonMaster.symbol),
 			h(sa.pool.reserve1),
@@ -78,11 +77,55 @@ func (sa *SwapAction) Pretty() string {
 	return sb.String()
 }
 
+// a. Name: token name
+// b. Symbol: token symbol
+// c. Tx Hash
+// d. Trader wallet
+// e. Marketcap
+// f. Token amt swapped
+// g. Amnt of Ton swapped
+// h. Type: buy or sell
+// I. Token price in usd
+// j. Ton price in usd
+// k. Liquidity reserves
+// l. Token balance held by the wallet (of the traded token)
+// m. Total supply
+
 func (sa *SwapAction) LongPretty() string {
-	return fmt.Sprintf("%s %s %s %s to %s %s with pool %s(reserve: %s/%s) at TX %s ",
-		s(sa.srcWallet), sa.Action(), h(sa.token0Coins), sa.Token0Symbol(),
-		h(sa.token1Coins), sa.Token1Symbol(), s(sa.pool.lpJetton), h(sa.pool.reserve0), h(sa.pool.reserve1),
-		base64.StdEncoding.EncodeToString(sa.hash))
+	p0, err := priceCollector.SymbolPrice(sa.pool.token0JettonMaster.symbol)
+	if err != nil {
+		p0 = tlb.Coins{}
+	}
+
+	t0Market := new(big.Int).Mul(sa.pool.token0JettonMaster.totalSupply, p0.Nano())
+
+	p1, err := priceCollector.SymbolPrice(sa.pool.token1JettonMaster.symbol)
+	if err != nil {
+		p1 = tlb.Coins{}
+	}
+
+	t1Market := new(big.Int).Mul(sa.pool.token1JettonMaster.totalSupply, p1.Nano())
+
+	items := []string{
+		sa.pool.token0JettonMaster.name,
+		sa.pool.token0JettonMaster.symbol,
+		base64.StdEncoding.EncodeToString(sa.hash),
+		sa.srcWallet.String(),
+		t0Market.String(),
+		sa.token0Coins.String(),
+		sa.token1Coins.String(),
+		string(sa.Action()),
+		p0.String(),
+		tonPrice.String(),
+		sa.pool.reserve0.String(),
+		sa.pool.reserve1.String(),
+		"", // token balance held by the wallet
+		sa.pool.token0JettonMaster.totalSupply.String(),
+		sa.pool.token1JettonMaster.totalSupply.String(),
+		t1Market.String(),
+	}
+
+	return strings.Join(items, ",")
 }
 
 func (sa *SwapAction) CSV() string {
